@@ -1,0 +1,33 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build_and_test:
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: 0.9.1
+      - run: zig build -Dtarget=x86_64-linux-musl
+      - run: sudo `which zig` build test -Dtarget=x86_64-linux-musl
+      - uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ./zig-out/bin/barn
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: 0.9.1
