@@ -65,7 +65,7 @@ fn usage(args: *c.fuse_args) void {
 
 pub fn main(argv: [][*:0]u8, is_test: bool) !void {
     defer log(.info, "client exit\n", .{});
-    const allocator = if (is_test) std.testing.allocator else std.heap.c_allocator;
+    const allocator = if (is_test) std.heap.page_allocator else std.heap.c_allocator;
 
     c.fuse_set_log_func(fuse.fuse_log);
 
@@ -129,7 +129,7 @@ pub fn main(argv: [][*:0]u8, is_test: bool) !void {
     var buf = try allocator.alloc(u8, fuse.bufsize);
     defer allocator.free(buf);
     const str = try std.fmt.bufPrintZ(buf, "/dev/fd/{}", .{try os.dup(socket.handle)});
-    var ret = c.fuse_mount(s, str);
+    var ret = c.fuse_mount(s, @ptrCast([*c]const u8, str));
     if (ret != 0) {
         log(.err, "client mount failed: {}\n", .{ret});
         return;
@@ -217,7 +217,7 @@ fn pass_access(path: [*c]const u8, mask: c_int) callconv(.C) c_int {
     return @intCast(c_int, linux.access(real_path, @intCast(c_uint, mask)));
 }
 
-fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?fn (?*anyopaque, [*c]const u8, [*c]const c.struct_stat, c_long, c_uint) callconv(.C) c_int, offset: c_long, fi: ?*c.fuse_file_info, flags: c_uint) callconv(.C) c_int {
+fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?*const fn (?*anyopaque, [*c]const u8, [*c]const c.struct_stat, c_long, c_uint) callconv(.C) c_int, offset: c_long, fi: ?*c.fuse_file_info, flags: c_uint) callconv(.C) c_int {
     _ = offset;
     _ = fi;
     _ = flags;
@@ -226,7 +226,7 @@ fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?fn (?*anyopaqu
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    const p = c.opendir(real_path);
+    const p = c.opendir(@ptrCast([*c]const u8, real_path));
     if (p) |dp| {
         defer _ = c.closedir(dp);
 
@@ -362,7 +362,7 @@ fn pass_truncate(path: [*c]const u8, size: c_long, fip: ?*c.fuse_file_info) call
         const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
         defer ctx.allocator.free(real_path);
 
-        const f = fs.cwd().openFile(real_path, .{ .write = true }) catch unreachable;
+        const f = fs.cwd().openFile(real_path, .{}) catch unreachable;
         defer f.close();
         return @intCast(c_int, linux.ftruncate(f.handle, size));
     }

@@ -2,15 +2,15 @@ const std = @import("std");
 const net = std.net;
 const os = std.os;
 const linux = os.linux;
-const c = @import("main.zig").c;
-const log = @import("main.zig").lg;
+const c = @import("root").c;
+const log = @import("root").lg;
 
 const fuse = @import("fuse.zig");
 
 const Opts = struct {
     port: u16 = 0,
     help: c_int = 0,
-    root: [*c]const u8 = null,
+    root: ?[*c]const u8 = null,
     debug: c_int = 0,
 };
 const opts_spec = [_]c.fuse_opt{
@@ -112,8 +112,7 @@ fn serve(opts: *const Opts, args: *c.fuse_args, conn: net.StreamServer.Connectio
     }
     log(.info, "serving from {}, the mirror root directory: {s}\n", .{ conn.address, root });
     defer std.fs.deleteTreeAbsolute(root) catch {};
-
-    var ret = c.fuse_session_mount(s, root);
+    var ret = c.fuse_session_mount(s, @ptrCast([*c]const u8, root));
     if (ret != 0) {
         log(.err, "mount failed: {}\n", .{ret});
         return;
