@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const net = std.net;
 const linux = os.linux;
 const os = std.os;
@@ -63,9 +64,9 @@ fn usage(args: *c.fuse_args) void {
     c.fuse_lib_help(args);
 }
 
-pub fn main(argv: [][*:0]u8, is_test: bool) !void {
+pub fn main(argv: [][*:0]u8) !void {
     defer log(.info, "client exit\n", .{});
-    const allocator = if (is_test) std.testing.allocator else std.heap.c_allocator;
+    const allocator = if (builtin.is_test) std.testing.allocator else std.heap.c_allocator;
 
     c.fuse_set_log_func(fuse.fuse_log);
 
@@ -129,7 +130,7 @@ pub fn main(argv: [][*:0]u8, is_test: bool) !void {
     var buf = try allocator.alloc(u8, fuse.bufsize);
     defer allocator.free(buf);
     const str = try std.fmt.bufPrintZ(buf, "/dev/fd/{}", .{try os.dup(socket.handle)});
-    var ret = c.fuse_mount(s, str);
+    var ret = c.fuse_mount(s, @ptrCast([*c]const u8, str));
     if (ret != 0) {
         log(.err, "client mount failed: {}\n", .{ret});
         return;
@@ -163,7 +164,7 @@ pub fn main(argv: [][*:0]u8, is_test: bool) !void {
 
         var off: usize = 0;
         while (left_in_buff > 0) {
-            const header = @ptrCast(*fuse.ReqHeader, buf.ptr + off);
+            const header = @ptrCast(*fuse.ReqHeader, @alignCast(@alignOf(*fuse.ReqHeader), buf.ptr + off));
             if (header.len > left_in_buff) {
                 std.mem.copy(u8, buf[0..left_in_buff], buf[off .. off + left_in_buff]);
                 break;
@@ -196,7 +197,7 @@ const FileInfo = extern struct {
 
 fn pass_init(ci: [*c]c.fuse_conn_info, cfg: [*c]c.fuse_config) callconv(.C) ?*anyopaque {
     cfg.*.kernel_cache = 1;
-    ci.*.want &= @bitReverse(c_uint, c.FUSE_CAP_SPLICE_READ);
+    ci.*.want &= @bitReverse(c.FUSE_CAP_SPLICE_READ);
 
     return c.fuse_get_context().*.private_data;
 }
@@ -206,7 +207,7 @@ fn pass_getattr(path: [*c]const u8, stbuf: [*c]c.struct_stat, _: ?*c.fuse_file_i
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, linux.lstat(real_path, @ptrCast(*os.Stat, stbuf)));
+    return @intCast(c_int, @bitCast(isize, linux.lstat(real_path, @ptrCast(*os.Stat, stbuf))));
 }
 
 fn pass_access(path: [*c]const u8, mask: c_int) callconv(.C) c_int {
@@ -214,10 +215,10 @@ fn pass_access(path: [*c]const u8, mask: c_int) callconv(.C) c_int {
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, linux.access(real_path, @intCast(c_uint, mask)));
+    return @intCast(c_int, @bitCast(isize, linux.access(real_path, @intCast(c_uint, mask))));
 }
 
-fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?fn (?*anyopaque, [*c]const u8, [*c]const c.struct_stat, c_long, c_uint) callconv(.C) c_int, offset: c_long, fi: ?*c.fuse_file_info, flags: c_uint) callconv(.C) c_int {
+fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?*const fn (?*anyopaque, [*c]const u8, [*c]const c.struct_stat, c_long, c_uint) callconv(.C) c_int, offset: c_long, fi: ?*c.fuse_file_info, flags: c_uint) callconv(.C) c_int {
     _ = offset;
     _ = fi;
     _ = flags;
@@ -226,7 +227,7 @@ fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?fn (?*anyopaqu
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    const p = c.opendir(real_path);
+    const p = c.opendir(@ptrCast([*c]const u8, real_path));
     if (p) |dp| {
         defer _ = c.closedir(dp);
 
@@ -249,7 +250,7 @@ fn pass_open(path: [*c]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
     const p = @ptrCast(*align(1) FileInfo, fi.?);
     const ret = linux.open(real_path, @intCast(u32, p.flags), 0);
     if (linux.getErrno(ret) != .SUCCESS) {
-        return @intCast(c_int, ret);
+        return @intCast(c_int, @bitCast(isize, ret));
     }
 
     p.fh = @intCast(u64, ret);
@@ -269,7 +270,7 @@ fn pass_read(_: [*c]const u8, buf: [*c]u8, size: usize, offset: c_long, fi: ?*c.
 
     const read = linux.pread(fd, buf, want_size, offset);
 
-    return @intCast(c_int, read);
+    return @intCast(c_int, @bitCast(isize, read));
 }
 
 fn pass_release(_: [*c]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
@@ -286,7 +287,7 @@ fn pass_create(path: [*c]const u8, mode: c_uint, fi: ?*c.fuse_file_info) callcon
     const p = @ptrCast(*align(1) FileInfo, fi.?);
     const ret = linux.open(real_path, @intCast(u32, p.flags), mode);
     if (linux.getErrno(ret) != .SUCCESS) {
-        return @intCast(c_int, ret);
+        return @intCast(c_int, @bitCast(isize, ret));
     }
 
     p.fh = @intCast(u64, ret);
@@ -299,7 +300,7 @@ fn pass_write(_: [*c]const u8, buf: [*c]const u8, size: usize, offset: c_long, f
 
     const read = linux.pwrite(fd, buf, size, offset);
 
-    return @intCast(c_int, read);
+    return @intCast(c_int, @bitCast(isize, read));
 }
 
 fn pass_mkdir(path: [*c]const u8, mode: c_uint) callconv(.C) c_int {
@@ -307,7 +308,7 @@ fn pass_mkdir(path: [*c]const u8, mode: c_uint) callconv(.C) c_int {
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, linux.mkdir(real_path, mode));
+    return @intCast(c_int, @bitCast(isize, linux.mkdir(real_path, mode)));
 }
 
 fn pass_rmdir(path: [*c]const u8) callconv(.C) c_int {
@@ -315,7 +316,7 @@ fn pass_rmdir(path: [*c]const u8) callconv(.C) c_int {
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, linux.rmdir(real_path));
+    return @intCast(c_int, @bitCast(isize, linux.rmdir(real_path)));
 }
 
 fn pass_unlink(path: [*c]const u8) callconv(.C) c_int {
@@ -323,14 +324,14 @@ fn pass_unlink(path: [*c]const u8) callconv(.C) c_int {
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, linux.unlink(real_path));
+    return @intCast(c_int, @bitCast(isize, linux.unlink(real_path)));
 }
 
 fn pass_lseek(_: [*c]const u8, offset: c_long, whence: c_int, fi: ?*c.fuse_file_info) callconv(.C) c_long {
     const p = @ptrCast(*align(1) FileInfo, fi.?);
     const fd = @intCast(os.fd_t, p.fh);
 
-    return @intCast(c_long, linux.lseek(fd, offset, @intCast(usize, whence)));
+    return @intCast(c_long, @bitCast(isize, linux.lseek(fd, offset, @intCast(usize, whence))));
 }
 
 fn pass_readlink(path: [*c]const u8, buf: [*c]u8, size: usize) callconv(.C) c_int {
@@ -340,7 +341,7 @@ fn pass_readlink(path: [*c]const u8, buf: [*c]u8, size: usize) callconv(.C) c_in
 
     const ret = linux.readlink(real_path, buf, size - 1);
     if (linux.getErrno(ret) != .SUCCESS) {
-        return @intCast(c_int, ret);
+        return @intCast(c_int, @bitCast(isize, ret));
     }
 
     buf[ret] = 0;
@@ -356,14 +357,14 @@ fn pass_truncate(path: [*c]const u8, size: c_long, fip: ?*c.fuse_file_info) call
         const p = @ptrCast(*align(1) FileInfo, fi);
         const fd = @intCast(os.fd_t, p.fh);
 
-        return @intCast(c_int, linux.ftruncate(fd, size));
+        return @intCast(c_int, @bitCast(isize, linux.ftruncate(fd, size)));
     } else {
         const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
         const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
         defer ctx.allocator.free(real_path);
 
-        const f = fs.cwd().openFile(real_path, .{ .write = true }) catch unreachable;
+        const f = fs.cwd().openFile(real_path, .{ .mode = .write_only }) catch unreachable;
         defer f.close();
-        return @intCast(c_int, linux.ftruncate(f.handle, size));
+        return @intCast(c_int, @bitCast(isize, linux.ftruncate(f.handle, size)));
     }
 }

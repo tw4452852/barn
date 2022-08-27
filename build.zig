@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub fn build(b: *std.build.Builder) void {
     // Standard target options allows the person running `zig build` to choose
@@ -11,16 +12,19 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
+    if (comptime !checkVersion())
+        @compileError("Old compiler!");
+
     const exe = b.addExecutable("barn", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.linkLibC();
-    exe.addIncludeDir("vendor/include");
-    exe.addIncludeDir("vendor/libfuse/include");
+    exe.addIncludePath("vendor/include");
+    exe.addIncludePath("vendor/libfuse/include");
 
     const libfuse = b.addStaticLibrary("libfuse", null);
-    libfuse.addIncludeDir("vendor/include");
-    libfuse.addIncludeDir("vendor/libfuse/include");
+    libfuse.addIncludePath("vendor/include");
+    libfuse.addIncludePath("vendor/libfuse/include");
     libfuse.setTarget(target);
     libfuse.setBuildMode(mode);
     libfuse.linkLibC();
@@ -62,10 +66,22 @@ pub fn build(b: *std.build.Builder) void {
     exe_tests.setTarget(target);
     exe_tests.setBuildMode(mode);
     exe_tests.linkLibC();
-    exe_tests.addIncludeDir("vendor/include");
-    exe_tests.addIncludeDir("vendor/libfuse/include");
+    exe_tests.addIncludePath("vendor/include");
+    exe_tests.addIncludePath("vendor/libfuse/include");
     exe_tests.linkLibrary(libfuse);
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);
+}
+
+// ziglings reference
+fn checkVersion() bool {
+    if (!@hasDecl(builtin, "zig_version")) {
+        return false;
+    }
+
+    const needed_version = std.SemanticVersion.parse("0.10.0-dev.3685") catch unreachable;
+    const version = builtin.zig_version;
+    const order = version.order(needed_version);
+    return order != .lt;
 }

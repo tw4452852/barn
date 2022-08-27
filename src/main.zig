@@ -22,7 +22,7 @@ const server = @import("server.zig");
 const client = @import("client.zig");
 
 fn usage() void {
-    print("{s} [server|client] [options]", .{os.argv[0]});
+    print("{s} [server|client] [options]\n", .{os.argv[0]});
 }
 
 pub var effective_log_level: std.log.Level = .info;
@@ -46,10 +46,11 @@ pub fn main() anyerror!void {
 
     const cmd = std.mem.sliceTo(args[1], 0);
     const cmdArgs = args[1..];
+
     if (std.mem.eql(u8, cmd, "server")) {
-        return server.main(cmdArgs, false);
+        return server.main(cmdArgs);
     } else if (std.mem.eql(u8, cmd, "client")) {
-        return client.main(cmdArgs, false);
+        return client.main(cmdArgs);
     } else {
         usage();
     }
@@ -59,7 +60,8 @@ const clientRoot = "/tmp/client_root";
 const serverRoot = "/tmp/server_root";
 const port = "12345";
 test {
-    fs.makeDirAbsolute(clientRoot) catch |e| if (e != os.MakeDirError.PathAlreadyExists) return e;
+    fs.deleteTreeAbsolute(clientRoot) catch {};
+    try fs.makeDirAbsolute(clientRoot);
     defer {
         fs.deleteTreeAbsolute(clientRoot) catch {};
         fs.deleteTreeAbsolute(serverRoot) catch {};
@@ -85,30 +87,58 @@ test {
     };
     defer for (serverArgs) |a| std.testing.allocator.free(std.mem.sliceTo(a, 0));
 
-    const srv = try std.Thread.spawn(.{}, server.main, .{ &serverArgs, true });
+    const srv = try std.Thread.spawn(.{}, server.main, .{&serverArgs});
     defer srv.join();
 
     std.time.sleep(1 * std.time.ns_per_s);
-    const cli = try std.Thread.spawn(.{}, client.main, .{ &clientArgs, true });
+    const cli = try std.Thread.spawn(.{}, client.main, .{&clientArgs});
     defer cli.join();
 
     std.time.sleep(1 * std.time.ns_per_s);
     print("setup done\n", .{});
     defer {
         print("finishing...\n", .{});
+
         const handle = cli.getHandle();
         _ = c.pthread_kill(if (@import("builtin").abi == .musl) @intToPtr(c.pthread_t, @ptrToInt(handle)) else @ptrToInt(handle), os.SIG.HUP);
     }
 
-    try testRead();
-    try testWrite();
-    try testOverwrite();
-    try testSeek();
-    try testMakeDir();
-    try testReadDir();
-    try testRemoveDir();
-    try testRemoveFile();
-    try testReadLink();
+    testRead() catch |e| {
+        print("testRead failed: {}\n", .{e});
+        return e;
+    };
+    testWrite() catch |e| {
+        print("testWrite failed: {}\n", .{e});
+        return e;
+    };
+    testOverwrite() catch |e| {
+        print("testOverwrite failed: {}\n", .{e});
+        return e;
+    };
+    testSeek() catch |e| {
+        print("testSeek failed: {}\n", .{e});
+        return e;
+    };
+    testMakeDir() catch |e| {
+        print("testMakeDir failed: {}\n", .{e});
+        return e;
+    };
+    testReadDir() catch |e| {
+        print("testReadDir failed: {}\n", .{e});
+        return e;
+    };
+    testRemoveDir() catch |e| {
+        print("testRemoveDir failed: {}\n", .{e});
+        return e;
+    };
+    testRemoveFile() catch |e| {
+        print("testRemoveFile failed: {}\n", .{e});
+        return e;
+    };
+    testReadLink() catch |e| {
+        print("testReadLink failed: {}\n", .{e});
+        return e;
+    };
 }
 
 fn testRead() !void {
@@ -162,14 +192,14 @@ fn testMakeDir() !void {
 }
 
 fn testReadDir() !void {
-    const root = try fs.openDirAbsolute(serverRoot, .{ .iterate = true });
-    const expected = [_]fs.Dir.Entry{
+    const root = try fs.openIterableDirAbsolute(serverRoot, .{});
+    const expected = [_]fs.IterableDir.Entry{
         .{ .name = "2.txt", .kind = .File },
         .{ .name = "1.txt", .kind = .File },
         .{ .name = "test", .kind = .Directory },
     };
 
-    var actual = std.ArrayList(fs.Dir.Entry).init(testing.allocator);
+    var actual = std.ArrayList(fs.IterableDir.Entry).init(testing.allocator);
     defer actual.deinit();
     var iter = root.iterate();
     while (try iter.next()) |entry| {
@@ -177,10 +207,16 @@ fn testReadDir() !void {
     }
 
     try testing.expectEqual(expected.len, actual.items.len);
-    for (actual.items) |got, i| {
-        try testing.expectEqual(expected[i].kind, got.kind);
-        try testing.expectEqualStrings(expected[i].name, got.name);
+    for (actual.items) |got| {
+        try testing.expect(contains(&expected, got));
     }
+}
+
+fn contains(set: []const fs.IterableDir.Entry, got: fs.IterableDir.Entry) bool {
+    for (set) |ent| {
+        if (ent.kind == got.kind and std.mem.eql(u8, ent.name, got.name)) return true;
+    }
+    return false;
 }
 
 fn testRemoveDir() !void {
