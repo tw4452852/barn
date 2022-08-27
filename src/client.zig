@@ -3,8 +3,8 @@ const net = std.net;
 const linux = os.linux;
 const os = std.os;
 const fs = std.fs;
-const c = @import("main.zig").c;
-const log = @import("main.zig").lg;
+const c = @import("root").c;
+const log = @import("root").lg;
 const fuse = @import("fuse.zig");
 
 const Opts = struct {
@@ -65,7 +65,8 @@ fn usage(args: *c.fuse_args) void {
 
 pub fn main(argv: [][*:0]u8, is_test: bool) !void {
     defer log(.info, "client exit\n", .{});
-    const allocator = if (is_test) std.heap.page_allocator else std.heap.c_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = if (is_test) gpa.allocator() else std.heap.c_allocator;
 
     c.fuse_set_log_func(fuse.fuse_log);
 
@@ -80,7 +81,7 @@ pub fn main(argv: [][*:0]u8, is_test: bool) !void {
         usage(&args);
         return;
     }
-    if (opts.debug == 1) @import("main.zig").effective_log_level = .debug;
+    if (opts.debug == 1) @import("root").effective_log_level = .debug;
 
     log(.debug, "argv: {s}, opts: {}\n", .{ argv, opts });
 

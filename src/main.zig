@@ -22,7 +22,7 @@ const server = @import("server.zig");
 const client = @import("client.zig");
 
 fn usage() void {
-    print("{s} [server|client] [options]", .{os.argv[0]});
+    print("{s} [server|client] [options]\n", .{os.argv[0]});
 }
 
 pub var effective_log_level: std.log.Level = .info;
