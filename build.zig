@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub fn build(b: *std.build.Builder) void {
     // Standard target options allows the person running `zig build` to choose
@@ -10,6 +11,9 @@ pub fn build(b: *std.build.Builder) void {
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
+
+    if (comptime !checkVersion())
+        @compileError("Old compiler!");
 
     const exe = b.addExecutable("barn", "src/main.zig");
     exe.setTarget(target);
@@ -68,4 +72,16 @@ pub fn build(b: *std.build.Builder) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);
+}
+
+// ziglings reference
+fn checkVersion() bool {
+    if (!@hasDecl(builtin, "zig_version")) {
+        return false;
+    }
+
+    const needed_version = std.SemanticVersion.parse("0.10.0-dev.3685") catch unreachable;
+    const version = builtin.zig_version;
+    const order = version.order(needed_version);
+    return order != .lt;
 }

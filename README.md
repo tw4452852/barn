@@ -8,6 +8,7 @@ Barn is a tool to mirror your local directory on a remote machine.
 
 ### Prerequisite
 
+**Zig version:** 0.10 or master
 Make sure the remote machine's kernel has enabled `CONFIG_FUSE_FS`.
 This is the only dependency, no others!
 

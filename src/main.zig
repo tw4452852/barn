@@ -47,9 +47,9 @@ pub fn main() anyerror!void {
     const cmd = std.mem.sliceTo(args[1], 0);
     const cmdArgs = args[1..];
     if (std.mem.eql(u8, cmd, "server")) {
-        return server.main(cmdArgs, false);
+        return server.main(cmdArgs);
     } else if (std.mem.eql(u8, cmd, "client")) {
-        return client.main(cmdArgs, false);
+        return client.main(cmdArgs);
     } else {
         usage();
     }
@@ -162,14 +162,14 @@ fn testMakeDir() !void {
 }
 
 fn testReadDir() !void {
-    const root = try fs.openDirAbsolute(serverRoot, .{ .iterate = true });
-    const expected = [_]fs.Dir.Entry{
+    const root = try fs.openIterableDirAbsolute(serverRoot, .{});
+    const expected = [_]fs.IterableDir.Entry{
         .{ .name = "2.txt", .kind = .File },
         .{ .name = "1.txt", .kind = .File },
         .{ .name = "test", .kind = .Directory },
     };
 
-    var actual = std.ArrayList(fs.Dir.Entry).init(testing.allocator);
+    var actual = std.ArrayList(fs.IterableDir.Entry).init(testing.allocator);
     defer actual.deinit();
     var iter = root.iterate();
     while (try iter.next()) |entry| {

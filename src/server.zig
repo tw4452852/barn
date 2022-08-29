@@ -1,9 +1,10 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const net = std.net;
 const os = std.os;
 const linux = os.linux;
-const c = @import("root").c;
-const log = @import("root").lg;
+const c = @import("main.zig").c;
+const log = @import("main.zig").lg;
 
 const fuse = @import("fuse.zig");
 
@@ -56,7 +57,7 @@ fn usage(args: *c.fuse_args) void {
     c.fuse_lib_help(args);
 }
 
-pub fn main(argv: [][*:0]u8, is_test: bool) !void {
+pub fn main(argv: [][*:0]u8) !void {
     c.fuse_set_log_func(fuse.fuse_log);
 
     var args: c.fuse_args = .{
@@ -84,7 +85,7 @@ pub fn main(argv: [][*:0]u8, is_test: bool) !void {
     while (true) {
         const conn = try server.accept();
         const t = try std.Thread.spawn(.{}, serve, .{ &opts, &args, conn });
-        if (is_test) {
+        if (builtin.is_test) {
             t.join();
             break;
         }
