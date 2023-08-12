@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -10,23 +10,29 @@ pub fn build(b: *std.build.Builder) void {
 
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+    const mode = b.standardOptimizeOption(.{});
 
     if (comptime !checkVersion())
         @compileError("Old compiler!");
 
-    const exe = b.addExecutable("barn", "src/main.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
+    const exe = b.addExecutable(.{
+        .name = "barn",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = mode,
+    });
     exe.linkLibC();
-    exe.addIncludePath("vendor/include");
-    exe.addIncludePath("vendor/libfuse/include");
+    exe.addIncludePath(.{ .path = "vendor/include" });
+    exe.addIncludePath(.{ .path = "vendor/libfuse/include" });
 
-    const libfuse = b.addStaticLibrary("libfuse", null);
-    libfuse.addIncludePath("vendor/include");
-    libfuse.addIncludePath("vendor/libfuse/include");
-    libfuse.setTarget(target);
-    libfuse.setBuildMode(mode);
+    const libfuse = b.addStaticLibrary(.{
+        .name = "libfuse",
+        .target = target,
+        .optimize = mode,
+    });
+    libfuse.addIncludePath(.{ .path = "vendor/include" });
+    libfuse.addIncludePath(.{ .path = "vendor/libfuse/include" });
+    libfuse.omit_frame_pointer = false;
     libfuse.linkLibC();
     const libfuseSources = [_][]const u8{
         "vendor/libfuse/lib/fuse.c",
@@ -45,15 +51,17 @@ pub fn build(b: *std.build.Builder) void {
         "vendor/libfuse/lib/fuse_log.c",
         "vendor/libfuse/lib/mount.c",
     };
-    const libfuseFlags = [_][]const u8{
-        "-DFUSE_USE_VERSION=35",
-    };
-    libfuse.addCSourceFiles(&libfuseSources, &libfuseFlags);
+    libfuse.defineCMacro("FUSE_USE_VERSION", "35");
+    libfuse.addCSourceFiles(&libfuseSources, &.{
+        "-Wall",
+        "-Wextra",
+        // "-Wpedantic",
+    });
     exe.linkLibrary(libfuse);
 
-    exe.install();
+    b.installArtifact(exe);
 
-    const run_cmd = exe.run();
+    const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);
@@ -62,13 +70,16 @@ pub fn build(b: *std.build.Builder) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const exe_tests = b.addTest("src/main.zig");
-    exe_tests.setTarget(target);
-    exe_tests.setBuildMode(mode);
-    exe_tests.linkLibC();
-    exe_tests.addIncludePath("vendor/include");
-    exe_tests.addIncludePath("vendor/libfuse/include");
+    const exe_tests = b.addTest(.{
+        .name = "barn-test",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = mode,
+    });
+    exe_tests.addIncludePath(.{ .path = "vendor/include" });
+    exe_tests.addIncludePath(.{ .path = "vendor/libfuse/include" });
     exe_tests.linkLibrary(libfuse);
+    exe_tests.linkLibC();
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);

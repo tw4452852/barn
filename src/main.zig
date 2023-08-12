@@ -31,7 +31,7 @@ pub fn lg(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (@enumToInt(message_level) <= @enumToInt(effective_log_level)) {
+    if (@intFromEnum(message_level) <= @intFromEnum(effective_log_level)) {
         std.debug.print(format, args);
     }
 }
@@ -100,7 +100,7 @@ test {
         print("finishing...\n", .{});
 
         const handle = cli.getHandle();
-        _ = c.pthread_kill(if (@import("builtin").abi == .musl) @intToPtr(c.pthread_t, @ptrToInt(handle)) else @ptrToInt(handle), os.SIG.HUP);
+        _ = c.pthread_kill(if (@import("builtin").abi == .musl) @as(c.pthread_t, @ptrFromInt(@intFromPtr(handle))) else @intFromPtr(handle), os.SIG.HUP);
     }
 
     testRead() catch |e| {
@@ -194,9 +194,9 @@ fn testMakeDir() !void {
 fn testReadDir() !void {
     const root = try fs.openIterableDirAbsolute(serverRoot, .{});
     const expected = [_]fs.IterableDir.Entry{
-        .{ .name = "2.txt", .kind = .File },
-        .{ .name = "1.txt", .kind = .File },
-        .{ .name = "test", .kind = .Directory },
+        .{ .name = "2.txt", .kind = .file },
+        .{ .name = "1.txt", .kind = .file },
+        .{ .name = "test", .kind = .directory },
     };
 
     var actual = std.ArrayList(fs.IterableDir.Entry).init(testing.allocator);

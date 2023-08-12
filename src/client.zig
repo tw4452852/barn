@@ -71,8 +71,8 @@ pub fn main(argv: [][*:0]u8) !void {
     c.fuse_set_log_func(fuse.fuse_log);
 
     var args: c.fuse_args = .{
-        .argc = @intCast(c_int, argv.len),
-        .argv = @ptrCast([*c][*c]u8, argv),
+        .argc = @as(c_int, @intCast(argv.len)),
+        .argv = @as([*c][*c]u8, @ptrCast(argv)),
         .allocated = 0,
     };
 
@@ -130,7 +130,7 @@ pub fn main(argv: [][*:0]u8) !void {
     var buf = try allocator.alloc(u8, fuse.bufsize);
     defer allocator.free(buf);
     const str = try std.fmt.bufPrintZ(buf, "/dev/fd/{}", .{try os.dup(socket.handle)});
-    var ret = c.fuse_mount(s, @ptrCast([*c]const u8, str));
+    var ret = c.fuse_mount(s, @as([*c]const u8, @ptrCast(str)));
     if (ret != 0) {
         log(.err, "client mount failed: {}\n", .{ret});
         return;
@@ -164,7 +164,7 @@ pub fn main(argv: [][*:0]u8) !void {
 
         var off: usize = 0;
         while (left_in_buff > 0) {
-            const header = @ptrCast(*fuse.ReqHeader, @alignCast(@alignOf(*fuse.ReqHeader), buf.ptr + off));
+            const header = @as(*fuse.ReqHeader, @ptrCast(@alignCast(buf.ptr + off)));
             if (header.len > left_in_buff) {
                 std.mem.copy(u8, buf[0..left_in_buff], buf[off .. off + left_in_buff]);
                 break;
@@ -203,19 +203,19 @@ fn pass_init(ci: [*c]c.fuse_conn_info, cfg: [*c]c.fuse_config) callconv(.C) ?*an
 }
 
 fn pass_getattr(path: [*c]const u8, stbuf: [*c]c.struct_stat, _: ?*c.fuse_file_info) callconv(.C) c_int {
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, @bitCast(isize, linux.lstat(real_path, @ptrCast(*os.Stat, stbuf))));
+    return @as(c_int, @intCast(@as(isize, @bitCast(linux.lstat(real_path, @as(*os.Stat, @ptrCast(stbuf)))))));
 }
 
 fn pass_access(path: [*c]const u8, mask: c_int) callconv(.C) c_int {
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, @bitCast(isize, linux.access(real_path, @intCast(c_uint, mask))));
+    return @as(c_int, @intCast(@as(isize, @bitCast(linux.access(real_path, @as(c_uint, @intCast(mask)))))));
 }
 
 fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?*const fn (?*anyopaque, [*c]const u8, [*c]const c.struct_stat, c_long, c_uint) callconv(.C) c_int, offset: c_long, fi: ?*c.fuse_file_info, flags: c_uint) callconv(.C) c_int {
@@ -223,17 +223,17 @@ fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?*const fn (?*a
     _ = fi;
     _ = flags;
 
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    const p = c.opendir(@ptrCast([*c]const u8, real_path));
+    const p = c.opendir(@as([*c]const u8, @ptrCast(real_path)));
     if (p) |dp| {
         defer _ = c.closedir(dp);
 
         while (c.readdir(dp)) |de| {
             const st = std.mem.zeroInit(c.struct_stat, .{
-                .st_mode = @intCast(u32, de.*.d_type) << 12,
+                .st_mode = @as(u32, @intCast(de.*.d_type)) << 12,
             });
             if (filler.?(buffer, &de.*.d_name, &st, 0, 0) != 0) break;
         }
@@ -243,105 +243,105 @@ fn pass_readdir(path: [*c]const u8, buffer: ?*anyopaque, filler: ?*const fn (?*a
 }
 
 fn pass_open(path: [*c]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    const p = @ptrCast(*align(1) FileInfo, fi.?);
-    const ret = linux.open(real_path, @intCast(u32, p.flags), 0);
+    const p = @as(*align(1) FileInfo, @ptrCast(fi.?));
+    const ret = linux.open(real_path, @as(u32, @intCast(p.flags)), 0);
     if (linux.getErrno(ret) != .SUCCESS) {
-        return @intCast(c_int, @bitCast(isize, ret));
+        return @as(c_int, @intCast(@as(isize, @bitCast(ret))));
     }
 
-    p.fh = @intCast(u64, ret);
+    p.fh = @as(u64, @intCast(ret));
     return 0;
 }
 
 fn pass_read(_: [*c]const u8, buf: [*c]u8, size: usize, offset: c_long, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-    const p = @ptrCast(*align(1) FileInfo, fi.?);
-    const fd = @intCast(os.fd_t, p.fh);
+    const p = @as(*align(1) FileInfo, @ptrCast(fi.?));
+    const fd = @as(os.fd_t, @intCast(p.fh));
     const f: fs.File = .{ .handle = fd };
 
     const len = f.getEndPos() catch unreachable;
     if (offset >= len) return 0;
 
     var want_size = size;
-    if (@intCast(usize, offset) + want_size > len) want_size = len - @intCast(usize, offset);
+    if (@as(usize, @intCast(offset)) + want_size > len) want_size = len - @as(usize, @intCast(offset));
 
     const read = linux.pread(fd, buf, want_size, offset);
 
-    return @intCast(c_int, @bitCast(isize, read));
+    return @as(c_int, @intCast(@as(isize, @bitCast(read))));
 }
 
 fn pass_release(_: [*c]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-    const p = @ptrCast(*align(1) FileInfo, fi.?);
-    os.close(@intCast(os.fd_t, p.fh));
+    const p = @as(*align(1) FileInfo, @ptrCast(fi.?));
+    os.close(@as(os.fd_t, @intCast(p.fh)));
     return 0;
 }
 
 fn pass_create(path: [*c]const u8, mode: c_uint, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    const p = @ptrCast(*align(1) FileInfo, fi.?);
-    const ret = linux.open(real_path, @intCast(u32, p.flags), mode);
+    const p = @as(*align(1) FileInfo, @ptrCast(fi.?));
+    const ret = linux.open(real_path, @as(u32, @intCast(p.flags)), mode);
     if (linux.getErrno(ret) != .SUCCESS) {
-        return @intCast(c_int, @bitCast(isize, ret));
+        return @as(c_int, @intCast(@as(isize, @bitCast(ret))));
     }
 
-    p.fh = @intCast(u64, ret);
+    p.fh = @as(u64, @intCast(ret));
     return 0;
 }
 
 fn pass_write(_: [*c]const u8, buf: [*c]const u8, size: usize, offset: c_long, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-    const p = @ptrCast(*align(1) FileInfo, fi.?);
-    const fd = @intCast(os.fd_t, p.fh);
+    const p = @as(*align(1) FileInfo, @ptrCast(fi.?));
+    const fd = @as(os.fd_t, @intCast(p.fh));
 
     const read = linux.pwrite(fd, buf, size, offset);
 
-    return @intCast(c_int, @bitCast(isize, read));
+    return @as(c_int, @intCast(@as(isize, @bitCast(read))));
 }
 
 fn pass_mkdir(path: [*c]const u8, mode: c_uint) callconv(.C) c_int {
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, @bitCast(isize, linux.mkdir(real_path, mode)));
+    return @as(c_int, @intCast(@as(isize, @bitCast(linux.mkdir(real_path, mode)))));
 }
 
 fn pass_rmdir(path: [*c]const u8) callconv(.C) c_int {
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, @bitCast(isize, linux.rmdir(real_path)));
+    return @as(c_int, @intCast(@as(isize, @bitCast(linux.rmdir(real_path)))));
 }
 
 fn pass_unlink(path: [*c]const u8) callconv(.C) c_int {
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
-    return @intCast(c_int, @bitCast(isize, linux.unlink(real_path)));
+    return @as(c_int, @intCast(@as(isize, @bitCast(linux.unlink(real_path)))));
 }
 
 fn pass_lseek(_: [*c]const u8, offset: c_long, whence: c_int, fi: ?*c.fuse_file_info) callconv(.C) c_long {
-    const p = @ptrCast(*align(1) FileInfo, fi.?);
-    const fd = @intCast(os.fd_t, p.fh);
+    const p = @as(*align(1) FileInfo, @ptrCast(fi.?));
+    const fd = @as(os.fd_t, @intCast(p.fh));
 
-    return @intCast(c_long, @bitCast(isize, linux.lseek(fd, offset, @intCast(usize, whence))));
+    return @as(c_long, @intCast(@as(isize, @bitCast(linux.lseek(fd, offset, @as(usize, @intCast(whence)))))));
 }
 
 fn pass_readlink(path: [*c]const u8, buf: [*c]u8, size: usize) callconv(.C) c_int {
-    const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+    const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
     const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
     defer ctx.allocator.free(real_path);
 
     const ret = linux.readlink(real_path, buf, size - 1);
     if (linux.getErrno(ret) != .SUCCESS) {
-        return @intCast(c_int, @bitCast(isize, ret));
+        return @as(c_int, @intCast(@as(isize, @bitCast(ret))));
     }
 
     buf[ret] = 0;
@@ -354,17 +354,17 @@ fn pass_flush(_: [*c]const u8, _: ?*c.fuse_file_info) callconv(.C) c_int {
 
 fn pass_truncate(path: [*c]const u8, size: c_long, fip: ?*c.fuse_file_info) callconv(.C) c_int {
     if (fip) |fi| {
-        const p = @ptrCast(*align(1) FileInfo, fi);
-        const fd = @intCast(os.fd_t, p.fh);
+        const p = @as(*align(1) FileInfo, @ptrCast(fi));
+        const fd = @as(os.fd_t, @intCast(p.fh));
 
-        return @intCast(c_int, @bitCast(isize, linux.ftruncate(fd, size)));
+        return @as(c_int, @intCast(@as(isize, @bitCast(linux.ftruncate(fd, size)))));
     } else {
-        const ctx = @ptrCast(*align(1) Ctx, c.fuse_get_context().*.private_data);
+        const ctx = @as(*align(1) Ctx, @ptrCast(c.fuse_get_context().*.private_data));
         const real_path = std.fmt.allocPrintZ(ctx.allocator, "{s}/{s}", .{ ctx.root, path }) catch unreachable;
         defer ctx.allocator.free(real_path);
 
         const f = fs.cwd().openFile(real_path, .{ .mode = .write_only }) catch unreachable;
         defer f.close();
-        return @intCast(c_int, @bitCast(isize, linux.ftruncate(f.handle, size)));
+        return @as(c_int, @intCast(@as(isize, @bitCast(linux.ftruncate(f.handle, size)))));
     }
 }
