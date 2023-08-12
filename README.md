@@ -62,7 +62,7 @@ You could either download the [prebuilt binary](https://github.com/tw4452852/bar
 
 ### How to build
 
-**Zig version:** 0.10.0
+**Zig version:** 0.11.0
 
 ```
 git clone https://github.com/tw4452852/barn

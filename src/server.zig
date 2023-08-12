@@ -61,8 +61,8 @@ pub fn main(argv: [][*:0]u8) !void {
     c.fuse_set_log_func(fuse.fuse_log);
 
     var args: c.fuse_args = .{
-        .argc = @intCast(c_int, argv.len),
-        .argv = @ptrCast([*c][*c]u8, argv),
+        .argc = @as(c_int, @intCast(argv.len)),
+        .argv = @as([*c][*c]u8, @ptrCast(argv)),
         .allocated = 0,
     };
     var opts: Opts = .{};
@@ -113,7 +113,7 @@ fn serve(opts: *const Opts, args: *c.fuse_args, conn: net.StreamServer.Connectio
     }
     log(.info, "serving from {}, the mirror root directory: {s}\n", .{ conn.address, root });
     defer std.fs.deleteTreeAbsolute(root) catch {};
-    var ret = c.fuse_session_mount(s, @ptrCast([*c]const u8, root));
+    var ret = c.fuse_session_mount(s, @as([*c]const u8, @ptrCast(root)));
     if (ret != 0) {
         log(.err, "mount failed: {}\n", .{ret});
         return;
@@ -147,7 +147,7 @@ const SPLICE_F_NONBLOCK = 2;
 const SPLICE_F_MORE = 4;
 
 fn splice(from: os.fd_t, to: os.fd_t, len: usize) !usize {
-    const n = os.linux.syscall6(os.linux.SYS.splice, @bitCast(usize, @as(isize, from)), 0, @bitCast(usize, @as(isize, to)), 0, len, SPLICE_F_MOVE);
+    const n = os.linux.syscall6(os.linux.SYS.splice, @as(usize, @bitCast(@as(isize, from))), 0, @as(usize, @bitCast(@as(isize, to))), 0, len, SPLICE_F_MOVE);
     const err = linux.getErrno(n);
     if (err != .SUCCESS) {
         if (err == .NOENT) {
@@ -175,22 +175,22 @@ fn get_header(comptime T: type, from: os.fd_t, header_pipe: [2]os.fd_t) !T {
     var header: T = undefined;
     const headerSize = @sizeOf(T);
     const iov: os.iovec = .{
-        .iov_base = @ptrCast([*]u8, &header),
+        .iov_base = @as([*]u8, @ptrCast(&header)),
         .iov_len = headerSize,
     };
 
-    var n = linux.syscall4(linux.SYS.tee, @bitCast(usize, @as(isize, from)), @bitCast(usize, @as(isize, header_pipe[1])), headerSize, 0);
+    var n = linux.syscall4(linux.SYS.tee, @as(usize, @bitCast(@as(isize, from))), @as(usize, @bitCast(@as(isize, header_pipe[1]))), headerSize, 0);
     var err = linux.getErrno(n);
     if (err != .SUCCESS) {
         log(.err, "{} failed to get length, tee: {}\n", .{ tid, err });
-        return @intToError(@enumToInt(err));
+        return @errorFromInt(@intFromEnum(err));
     }
     if (n < headerSize) return error.TOOSHORT;
 
-    err = linux.getErrno(linux.syscall4(linux.SYS.vmsplice, @bitCast(usize, @as(isize, header_pipe[0])), @ptrToInt(&iov), 1, 0));
+    err = linux.getErrno(linux.syscall4(linux.SYS.vmsplice, @as(usize, @bitCast(@as(isize, header_pipe[0]))), @intFromPtr(&iov), 1, 0));
     if (err != .SUCCESS) {
         log(.err, "{} failed to get length, vmsplice: {}\n", .{ tid, err });
-        return @intToError(@enumToInt(err));
+        return @errorFromInt(@intFromEnum(err));
     }
 
     return header;
