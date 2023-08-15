@@ -12,9 +12,6 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardOptimizeOption(.{});
 
-    if (comptime !checkVersion())
-        @compileError("Old compiler!");
-
     const exe = b.addExecutable(.{
         .name = "barn",
         .root_source_file = .{ .path = "src/main.zig" },
@@ -81,18 +78,7 @@ pub fn build(b: *std.Build) void {
     exe_tests.linkLibrary(libfuse);
     exe_tests.linkLibC();
 
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&exe_tests.step);
-}
-
-// ziglings reference
-fn checkVersion() bool {
-    if (!@hasDecl(builtin, "zig_version")) {
-        return false;
-    }
-
-    const needed_version = std.SemanticVersion.parse("0.10.0-dev.3685") catch unreachable;
-    const version = builtin.zig_version;
-    const order = version.order(needed_version);
-    return order != .lt;
+    const install_test = b.addInstallArtifact(exe_tests, .{});
+    const test_step = b.step("test", "Build unit tests");
+    test_step.dependOn(&install_test.step);
 }
